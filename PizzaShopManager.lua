@@ -99,8 +99,16 @@ task.wait(waitBeforeTeleport)
 
 print(string.format("\n--- Initiating Direct Teleport to %s ---", destinationId))
 
--- Call the enter_smooth function for the teleport
--- Arguments: (destinationId, doorId, settingsTable, optionalExitingDoor)
-InteriorsM.enter_smooth(destinationId, doorIdForTeleport, teleportSettings, nil)
+-- Call the enter_smooth function for the teleport, wrapped in pcall for debugging
+local success, result = pcall(InteriorsM.enter_smooth, InteriorsM, destinationId, doorIdForTeleport, teleportSettings, nil)
 
-print("\nAutomatic direct teleport script initiated.")
+if not success then
+    warn(string.format("Error during enter_smooth: %s", result))
+else
+    print("InteriorsM.enter_smooth call initiated successfully.")
+end
+
+-- Keep the script alive long enough for the teleport to complete
+task.wait(10)
+
+print("\nAutomatic direct teleport script process finished.")
