@@ -48,17 +48,36 @@ local teleportSettings = {
     -- This callback executes AFTER the smooth transition to the PizzaShop is complete.
     teleport_completed_callback = function()
         local rugPath = "Interiors.PizzaShop.Geometry.BasicRug.Colorable"
+        local TargetPart = nil
+
+        -- Step 1: Wait for the top-level Interiors folder.
+        local interiorsFolder = Workspace:WaitForChild("Interiors", 5)
         
-        print(string.format("Teleport to %s completed. Now attempting to move player to the rug: %s", destinationId, rugPath))
+        -- Step 2: Use a loop to repeatedly check for the specific deep part path.
+        -- We will check 10 times with a 0.1 second wait in between (1 second total).
+        local attempts = 0
+        while not TargetPart and attempts < 10 do 
+            if interiorsFolder then
+                -- FindFirstChild(name, recursive)
+                TargetPart = interiorsFolder:FindFirstChild("PizzaShop.Geometry.BasicRug.Colorable", true)
+            end
+            if not TargetPart then
+                task.wait(0.1)
+            end
+            attempts = attempts + 1
+        end
+
+        print(string.format("Teleport to %s completed. Now attempting to move player to the rug: %s (Found: %s)", destinationId, rugPath, tostring(TargetPart)))
         
-        -- Use WaitForChild with a timeout in case the interior is still streaming in, 
-        -- though it should ideally be streamed by this point.
-        local TargetPart = Workspace:WaitForChild("Interiors", 5):FindFirstChild(rugPath:match("^Interiors%.(.*)"), true)
         
         if TargetPart and TargetPart:IsA("BasePart") then
+            -- Ensure the character is loaded and ready
             local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
             
             if Character and Character.PrimaryPart then
+                -- *** FIX: Add a small wait for physics stability before the move ***
+                task.wait(0.1) 
+                
                 -- Set the character's CFrame to the part's CFrame, shifted 3 studs up 
                 -- to ensure the HumanoidRootPart is above the rug and doesn't clip.
                 local targetCFrame = TargetPart.CFrame * CFrame.new(0, 3, 0)
