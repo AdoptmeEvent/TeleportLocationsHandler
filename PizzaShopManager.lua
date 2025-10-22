@@ -1,18 +1,17 @@
 -- This is a LocalScript (put in StarterPlayerScripts or similar)
--- This script is designed to automatically teleport the local player to the specified interior: PizzaShop.
+-- This script is designed to automatically teleport the local player to the PizzaShop interior,
+-- and then place the character directly onto a specific part inside the model once it is loaded.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
-local Workspace = game:GetService("Workspace") -- Added reference to Workspace
+local RunService = game:GetService("RunService") -- Added RunService for aggressive positioning
 
--- --- MODULE LOADING ---
-
+-- Attempt to require necessary modules.
 local InteriorsM = nil
 local UIManager = nil 
 
 local successInteriorsM, errorMessageInteriorsM = pcall(function()
-    -- Assuming this path is correct for your game's InteriorsM module.
     InteriorsM = require(ReplicatedStorage.ClientModules.Core.InteriorsM.InteriorsM)
 end)
 
@@ -23,104 +22,139 @@ if not successInteriorsM then
 end
 
 local successUIManager, errorMessageUIManager = pcall(function()
-    -- Assuming Fsys is a module in ReplicatedStorage that loads other modules like UIManager.
+    -- UIManager is often found in ReplicatedStorage or as a service.
     UIManager = require(ReplicatedStorage:WaitForChild("Fsys")).load("UIManager")
 end)
 
 if not successUIManager or not UIManager then
-    warn("Failed to require UIManager module. The script will continue, but ensure UIManager is not critical for teleport initiation.")
+    warn("Failed to require UIManager module:", errorMessageUIManager)
+    warn("Attempting to get UIManager as a service (less likely for this context)...")
+    UIManager = game:GetService("UIManager") -- Fallback, though less likely to be the correct UIManager for apps
+    if not UIManager then
+        warn("Could not load UIManager module or service. Teleport script might not function correctly.")
+        return
+    end
 end
 
 
-print("InteriorsM module loaded successfully.")
+print("InteriorsM module loaded successfully. Proceeding with automatic teleport setup.")
+print("UIManager module loaded successfully.")
 
--- --- TELEPORT CONFIGURATION ---
 
-local destinationId = "PizzaShop" -- THE TARGET DESTINATION
--- We will no longer pass doorIdForTeleport in the main call, only the destination and settings.
--- local doorIdForTeleport = "MainDoor" 
-
--- We now use a more complete settings table to satisfy the InteriorsM module's requirements.
+-- --- TELEPORT SETTINGS ---
 local teleportSettings = {
-    -- **CRITICAL FIX:** These fade properties are mandatory for the module to read the table correctly.
-    fade_in_length = 0.5,
-    fade_out_length = 0.4,
-    fade_color = Color3.new(0, 0, 0), 
-    start_transparency = 0, 
+    fade_in_length = 0.5, -- Duration of the fade-in effect (seconds)
+    fade_out_length = 0.4, -- Duration of the fade-out effect (seconds)
+    fade_color = Color3.new(0, 0, 0), -- Color to fade to (black in this case)
+
+    player_to_teleport_to = nil,
+    anchor_char_immediately = true, -- Whether to anchor the character right away
+    post_character_anchored_wait = 0.5, -- Wait time after character is anchored
+
+    -- These properties are part of the settings table expected by enter_smooth.
+    door_id_for_location_module = nil,
+    exiting_door = nil,
     
-    -- Other necessary settings for a smooth transition 
-    anchor_char_immediately = true,
-    move_camera = true,
-
-    -- Callbacks (our custom logic)
-    player_about_to_teleport = function() 
-        print(string.format("Player is about to teleport to %s...", destinationId)) 
-    end,
-    -- This callback executes AFTER the smooth transition to the PizzaShop is complete.
-    teleport_completed_callback = function()
-        local rugPath = "Interiors.PizzaShop.Geometry.BasicRug.Colorable"
-        local TargetPart = nil
-
-        -- Step 1: Wait for the top-level Interiors folder.
-        local interiorsFolder = Workspace:WaitForChild("Interiors", 5)
-        
-        -- Step 2: Use a loop to repeatedly check for the specific deep part path.
-        -- We will check 10 times with a 0.1 second wait in between (1 second total).
-        local attempts = 0
-        while not TargetPart and attempts < 10 do 
-            if interiorsFolder then
-                -- FindFirstChild(name, recursive)
-                TargetPart = interiorsFolder:FindFirstChild("PizzaShop.Geometry.BasicRug.Colorable", true)
-            end
-            if not TargetPart then
-                task.wait(0.1)
-            end
-            attempts = attempts + 1
-        end
-
-        print(string.format("Teleport to %s completed. Now attempting to move player to the rug: %s (Found: %s)", destinationId, rugPath, tostring(TargetPart)))
-        
-        
-        if TargetPart and TargetPart:IsA("BasePart") then
-            -- Ensure the character is loaded and ready
-            local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-            
-            if Character and Character.PrimaryPart then
-                -- Add a small wait for physics stability before the move
-                task.wait(0.1) 
-                
-                -- Set the character's CFrame to the part's CFrame, shifted 3 studs up 
-                -- to ensure the HumanoidRootPart is above the rug and doesn't clip.
-                local targetCFrame = TargetPart.CFrame * CFrame.new(0, 3, 0)
-                Character:SetPrimaryPartCFrame(targetCFrame)
-                print("Player successfully moved onto the BasicRug.")
-            else
-                warn("Character or Character's PrimaryPart not found after initial teleport.")
-            end
-        else
-            warn("Target part 'workspace." .. rugPath .. "' not found. Could not move player to rug.")
-        end
-    end,
+    -- Callback function executed just before the player starts teleporting.
+    player_about_to_teleport = function() print("Player is about to teleport...") end,
 }
 
--- Wait a short time to ensure all core game scripts and modules have initialized.
-local waitBeforeTeleport = 3 
-print(string.format("\nWaiting %d seconds before attempting teleport to %s...", waitBeforeTeleport, destinationId))
-task.wait(waitBeforeTeleport)
+-- --- DIRECT TELEPORT TO PIZZASHOP ---
+local destinationId = "PizzaShop" -- New destination is PizzaShop
+local doorIdForTeleport = "MainDoor" -- This ID should match the door object name in the PizzaShop interior
 
-print(string.format("\n--- Initiating Direct Teleport to %s ---", destinationId))
+-- Function to handle position adjustment after the teleport is visually complete.
+local function handlePostTeleportMovement()
+    
+    local character = LocalPlayer.Character
+    
+    -- Wait up to 5 seconds for the HumanoidRootPart to appear
+    local humanoidRootPart = character and character:WaitForChild("HumanoidRootPart", 5) 
 
--- Simplified call: Only passing the required destinationId and the settings table.
-local success, result = pcall(InteriorsM.enter_smooth, InteriorsM, destinationId, teleportSettings) 
+    if not humanoidRootPart then
+        warn("HumanoidRootPart not found after character load.")
+        return
+    end
+    
+    -- --- ROBUST WAIT FOR TARGET MODEL ---
+    local pizzaShop = nil
+    local interiors = workspace:FindFirstChild("Interiors")
+    
+    if interiors then
+        print("Waiting for PizzaShop model to appear in Workspace.Interiors...")
+        -- Wait up to 10 seconds for the PizzaShop model to load
+        pizzaShop = interiors:WaitForChild("PizzaShop", 10) 
+    end
 
-if not success then
-    -- Log any new errors
-    warn(string.format("Error during enter_smooth: %s", result))
-else
-    print("InteriorsM.enter_smooth call initiated successfully.")
+    if not pizzaShop then
+        warn("PizzaShop model did not load within the timeout period.")
+        return
+    end
+    
+    -- Initial wait to ensure the screen fade is completely gone and the module has done its first CFrame.
+    task.wait(1.0) 
+
+    -- FIND TARGET PART: Search for the specific rug part inside the loaded PizzaShop interior.
+    local targetPart = pizzaShop:FindFirstChild("Geometry", true) 
+        and pizzaShop.Geometry:FindFirstChild("BasicRug", true)
+        and pizzaShop.Geometry.BasicRug:FindFirstChild("Colorable", true)
+
+
+    if targetPart and targetPart:IsA("BasePart") then
+        
+        -- Set the CFrame to the target part's position, plus a small vertical offset (2.5 studs)
+        local targetCFrame = targetPart.CFrame + Vector3.new(0, 2.5, 0)
+        local totalTime = 0
+        local ENFORCEMENT_DURATION = 2.0 -- How long to aggressively set the position (2 seconds)
+        
+        -- AGGRESSIVE CFrame ENFORCEMENT: Use Heartbeat to constantly override the CFrame.
+        -- Declare connection outside the Heartbeat function so it can be reliably disconnected.
+        local connection = nil 
+        
+        connection = RunService.Heartbeat:Connect(function(dt)
+            totalTime = totalTime + dt
+            
+            -- Continually set the CFrame to ensure the module cannot override it
+            humanoidRootPart.CFrame = targetCFrame
+            humanoidRootPart.Anchored = false 
+            
+            -- Stop hammering the CFrame after the duration is met
+            if totalTime > ENFORCEMENT_DURATION then
+                if connection then -- Check if connection is valid before disconnecting
+                    connection:Disconnect()
+                end
+                print("Aggressive CFrame enforcement finished. Character should be stable on the rug.")
+            end
+        end)
+        
+        -- Also set the CFrame once immediately after connecting the event
+        humanoidRootPart.CFrame = targetCFrame
+
+        print("Character teleported directly onto BasicRug.Colorable (Aggressive Enforcement Active).")
+    else
+        warn("Target part (BasicRug.Colorable) not found inside the loaded PizzaShop model.")
+    end
 end
 
--- Keep the script alive long enough for the teleport to complete
-task.wait(10)
 
-print("\nAutomatic direct teleport script process finished.")
+-- Wait for the interior to stream. This duration might need adjustment based on your game's loading speed.
+local waitBeforeTeleport = 10
+print(string.format("\nWaiting %d seconds for interior to stream before teleport...", waitBeforeTeleport))
+task.wait(waitBeforeTeleport)
+
+print("\n--- Initiating Direct Teleport to PizzaShop ---")
+print("Attempting to trigger automatic door teleport to destination:", destinationId)
+print("Using door ID:", doorIdForTeleport)
+print("Position adjustment will be handled by a separate background task.")
+
+-- Add a final small wait right before the InteriorsM.enter_smooth call
+task.wait(1) 
+
+-- Call the enter_smooth function for the teleport
+InteriorsM.enter_smooth(destinationId, doorIdForTeleport, teleportSettings, nil)
+
+-- --- FIX: Initiate a separate task to handle post-teleport position adjustment reliably. ---
+-- This task uses WaitForChild to guarantee the PizzaShop model is loaded before trying to position.
+task.spawn(handlePostTeleportMovement)
+
+print("\nautomatic direct PizzaShop teleport script initiated.")
