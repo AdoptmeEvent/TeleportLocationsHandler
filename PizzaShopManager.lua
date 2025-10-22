@@ -68,7 +68,7 @@ local commonTeleportSettings = {
 }
 
 -- --- DIRECT TELEPORT TO HOUSING (Replicating MagicHouseDoorInteractions Call) ---
-local destinationId = "housing"
+local destinationId = "PizzaShop"
 local doorIdForTeleport = "MainDoor" -- KEY: Using "MainDoor" as the door ID
 
 -- Create a *minimal* settings table for the teleport, as seen in MagicHouseDoorInteractions
