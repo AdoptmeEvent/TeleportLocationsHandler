@@ -39,9 +39,19 @@ print("InteriorsM module loaded successfully.")
 local destinationId = "PizzaShop" -- THE TARGET DESTINATION
 local doorIdForTeleport = "MainDoor" -- Assuming the PizzaShop uses "MainDoor" or a similar identifier for its main entrance
 
--- We use a minimal settings table, as we are not dealing with house ownership.
+-- We now use a more complete settings table to satisfy the InteriorsM module's requirements.
 local teleportSettings = {
-    -- Optional: You can add simple callback functions here if needed.
+    -- **CRITICAL FIX:** Added required fade properties to resolve 'attempt to index string with start_transparency'
+    fade_in_length = 0.5,
+    fade_out_length = 0.4,
+    fade_color = Color3.new(0, 0, 0), 
+    start_transparency = 0, -- This was the property that was missing/causing the error.
+    
+    -- Other necessary settings for a smooth transition (copied from original context)
+    anchor_char_immediately = true,
+    move_camera = true,
+
+    -- Callbacks (our custom logic)
     player_about_to_teleport = function() 
         print(string.format("Player is about to teleport to %s...", destinationId)) 
     end,
@@ -75,7 +85,7 @@ local teleportSettings = {
             local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
             
             if Character and Character.PrimaryPart then
-                -- *** FIX: Add a small wait for physics stability before the move ***
+                -- Add a small wait for physics stability before the move
                 task.wait(0.1) 
                 
                 -- Set the character's CFrame to the part's CFrame, shifted 3 studs up 
@@ -93,7 +103,7 @@ local teleportSettings = {
 }
 
 -- Wait a short time to ensure all core game scripts and modules have initialized.
-local waitBeforeTeleport = 3 -- Reduced from the original 10+ seconds for housing
+local waitBeforeTeleport = 3 
 print(string.format("\nWaiting %d seconds before attempting teleport to %s...", waitBeforeTeleport, destinationId))
 task.wait(waitBeforeTeleport)
 
@@ -103,6 +113,7 @@ print(string.format("\n--- Initiating Direct Teleport to %s ---", destinationId)
 local success, result = pcall(InteriorsM.enter_smooth, InteriorsM, destinationId, doorIdForTeleport, teleportSettings, nil)
 
 if not success then
+    -- Log any new errors
     warn(string.format("Error during enter_smooth: %s", result))
 else
     print("InteriorsM.enter_smooth call initiated successfully.")
