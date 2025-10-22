@@ -37,17 +37,18 @@ print("InteriorsM module loaded successfully.")
 -- --- TELEPORT CONFIGURATION ---
 
 local destinationId = "PizzaShop" -- THE TARGET DESTINATION
-local doorIdForTeleport = "MainDoor" -- Assuming the PizzaShop uses "MainDoor" or a similar identifier for its main entrance
+-- We will no longer pass doorIdForTeleport in the main call, only the destination and settings.
+-- local doorIdForTeleport = "MainDoor" 
 
 -- We now use a more complete settings table to satisfy the InteriorsM module's requirements.
 local teleportSettings = {
-    -- **CRITICAL FIX:** Added required fade properties to resolve 'attempt to index string with start_transparency'
+    -- **CRITICAL FIX:** These fade properties are mandatory for the module to read the table correctly.
     fade_in_length = 0.5,
     fade_out_length = 0.4,
     fade_color = Color3.new(0, 0, 0), 
-    start_transparency = 0, -- This was the property that was missing/causing the error.
+    start_transparency = 0, 
     
-    -- Other necessary settings for a smooth transition (copied from original context)
+    -- Other necessary settings for a smooth transition 
     anchor_char_immediately = true,
     move_camera = true,
 
@@ -109,9 +110,8 @@ task.wait(waitBeforeTeleport)
 
 print(string.format("\n--- Initiating Direct Teleport to %s ---", destinationId))
 
--- Call the enter_smooth function for the teleport, wrapped in pcall for debugging.
--- We are passing a final boolean argument (true) which often signifies 'teleport_player'
-local success, result = pcall(InteriorsM.enter_smooth, InteriorsM, destinationId, doorIdForTeleport, teleportSettings, nil, true) -- Added 'true'
+-- Simplified call: Only passing the required destinationId and the settings table.
+local success, result = pcall(InteriorsM.enter_smooth, InteriorsM, destinationId, teleportSettings) 
 
 if not success then
     -- Log any new errors
