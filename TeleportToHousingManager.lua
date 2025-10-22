@@ -36,7 +36,7 @@ if not successUIManager or not UIManager then
 end
 
 
-print("InteriorsM module loaded successfully. Proceeding with automatic teleport setup.")
+print("Teleport module loaded successfully. Proceeding with automatic teleport setup.")
 print("UIManager module loaded successfully.")
 
 
