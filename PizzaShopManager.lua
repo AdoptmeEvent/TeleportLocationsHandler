@@ -109,8 +109,9 @@ task.wait(waitBeforeTeleport)
 
 print(string.format("\n--- Initiating Direct Teleport to %s ---", destinationId))
 
--- Call the enter_smooth function for the teleport, wrapped in pcall for debugging
-local success, result = pcall(InteriorsM.enter_smooth, InteriorsM, destinationId, doorIdForTeleport, teleportSettings, nil)
+-- Call the enter_smooth function for the teleport, wrapped in pcall for debugging.
+-- We are passing a final boolean argument (true) which often signifies 'teleport_player'
+local success, result = pcall(InteriorsM.enter_smooth, InteriorsM, destinationId, doorIdForTeleport, teleportSettings, nil, true) -- Added 'true'
 
 if not success then
     -- Log any new errors
