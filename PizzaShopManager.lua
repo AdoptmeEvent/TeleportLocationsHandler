@@ -4,6 +4,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
+local Workspace = game:GetService("Workspace") -- Added reference to Workspace
 
 -- --- MODULE LOADING ---
 
@@ -44,8 +45,31 @@ local teleportSettings = {
     player_about_to_teleport = function() 
         print(string.format("Player is about to teleport to %s...", destinationId)) 
     end,
+    -- This callback executes AFTER the smooth transition to the PizzaShop is complete.
     teleport_completed_callback = function()
-        print(string.format("Teleport to %s completed.", destinationId))
+        local rugPath = "Interiors.PizzaShop.Geometry.BasicRug.Colorable"
+        
+        print(string.format("Teleport to %s completed. Now attempting to move player to the rug: %s", destinationId, rugPath))
+        
+        -- Use WaitForChild with a timeout in case the interior is still streaming in, 
+        -- though it should ideally be streamed by this point.
+        local TargetPart = Workspace:WaitForChild("Interiors", 5):FindFirstChild(rugPath:match("^Interiors%.(.*)"), true)
+        
+        if TargetPart and TargetPart:IsA("BasePart") then
+            local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+            
+            if Character and Character.PrimaryPart then
+                -- Set the character's CFrame to the part's CFrame, shifted 3 studs up 
+                -- to ensure the HumanoidRootPart is above the rug and doesn't clip.
+                local targetCFrame = TargetPart.CFrame * CFrame.new(0, 3, 0)
+                Character:SetPrimaryPartCFrame(targetCFrame)
+                print("Player successfully moved onto the BasicRug.")
+            else
+                warn("Character or Character's PrimaryPart not found after initial teleport.")
+            end
+        else
+            warn("Target part 'workspace." .. rugPath .. "' not found. Could not move player to rug.")
+        end
     end,
 }
 
