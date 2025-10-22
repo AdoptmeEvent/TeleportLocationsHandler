@@ -1,13 +1,15 @@
 -- This is a LocalScript (put in StarterPlayerScripts or similar)
--- This script is designed to automatically teleport the local player to their house.
+-- This script is designed to automatically teleport the local player to the Salon interior,
+-- and then place the character directly onto a specific part inside the model once it is loaded.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService") -- Added RunService for aggressive positioning
 
 -- Attempt to require necessary modules.
 local InteriorsM = nil
-local UIManager = nil -- We will load UIManager explicitly now
+local UIManager = nil 
 
 local successInteriorsM, errorMessageInteriorsM = pcall(function()
     InteriorsM = require(ReplicatedStorage.ClientModules.Core.InteriorsM.InteriorsM)
@@ -21,7 +23,6 @@ end
 
 local successUIManager, errorMessageUIManager = pcall(function()
     -- UIManager is often found in ReplicatedStorage or as a service.
-    -- Based on the decompiled code, it's loaded via Fsys, which implies it's a module.
     UIManager = require(ReplicatedStorage:WaitForChild("Fsys")).load("UIManager")
 end)
 
@@ -40,56 +41,121 @@ print("InteriorsM module loaded successfully. Proceeding with automatic teleport
 print("UIManager module loaded successfully.")
 
 
--- Define common teleport settings.
--- Note: We will use a *minimal* settings table for 'housing' teleport
--- based on the MagicHouseDoorInteractions module.
-local commonTeleportSettings = {
+-- --- TELEPORT SETTINGS ---
+local teleportSettings = {
     fade_in_length = 0.5, -- Duration of the fade-in effect (seconds)
     fade_out_length = 0.4, -- Duration of the fade-out effect (seconds)
     fade_color = Color3.new(0, 0, 0), -- Color to fade to (black in this case)
 
-    -- Callback function executed just before the player starts teleporting.
-    player_about_to_teleport = function() print("Player is about to teleport...") end,
-    -- Callback function executed once the teleportation process is fully completed.
-    teleport_completed_callback = function()
-        print("Teleport completed callback.")
-        task.wait(0.2) -- Small wait after teleport for stability
-    end,
     player_to_teleport_to = nil,
-
     anchor_char_immediately = true, -- Whether to anchor the character right away
     post_character_anchored_wait = 0.5, -- Wait time after character is anchored
-    
-    move_camera = true, -- Whether the camera should move with the player
 
     -- These properties are part of the settings table expected by enter_smooth.
     door_id_for_location_module = nil,
     exiting_door = nil,
+    
+    -- Callback function executed just before the player starts teleporting.
+    player_about_to_teleport = function() print("Player is about to teleport...") end,
 }
 
--- --- DIRECT TELEPORT TO HOUSING (Replicating MagicHouseDoorInteractions Call) ---
-local destinationId = "Salon"
-local doorIdForTeleport = "MainDoor" -- KEY: Using "MainDoor" as the door ID
+-- --- DIRECT TELEPORT TO SALON ---
+local destinationId = "Salon" -- CHANGED: New destination is Salon
+local doorIdForTeleport = "MainDoor" -- This ID should match the door object name in the Salon interior
 
--- Create a *minimal* settings table for the teleport, as seen in MagicHouseDoorInteractions
-local teleportSettings = {
-    house_owner = LocalPlayer; -- Pass the LocalPlayer object directly
-}
+-- Function to handle position adjustment after the teleport is visually complete.
+local function handlePostTeleportMovement()
+    
+    local character = LocalPlayer.Character
+    
+    -- Wait up to 5 seconds for the HumanoidRootPart to appear
+    local humanoidRootPart = character and character:WaitForChild("HumanoidRootPart", 5) 
 
--- Wait for house interior to stream. This duration might need adjustment based on your game's loading speed.
+    if not humanoidRootPart then
+        warn("HumanoidRootPart not found after character load.")
+        return
+    end
+    
+    -- --- ROBUST WAIT FOR TARGET MODEL ---
+    local salon = nil -- CHANGED: Renamed variable to 'salon'
+    local interiors = workspace:FindFirstChild("Interiors")
+    
+    if interiors then
+        print("Waiting for Salon model to appear in Workspace.Interiors...") -- CHANGED: Print statement
+        -- Wait up to 10 seconds for the Salon model to load
+        salon = interiors:WaitForChild("Salon", 10) -- CHANGED: Waiting for "Salon" 
+    end
+
+    if not salon then
+        warn("Salon model did not load within the timeout period.") -- CHANGED: Warning statement
+        return
+    end
+    
+    -- Initial wait to ensure the screen fade is completely gone and the module has done its first CFrame.
+    task.wait(1.0) 
+
+    -- FIND TARGET PART: Search for the specific Interact part inside the loaded Salon interior.
+    -- Path: workspace.Interiors.Salon.ShopItems["developer_product:paint_2023_colored_hair_spray_sealer"].Interact
+    local targetPart = salon:FindFirstChild("ShopItems", true) 
+        and salon.ShopItems:FindFirstChild("developer_product:paint_2023_colored_hair_spray_sealer", true)
+        and salon.ShopItems["developer_product:paint_2023_colored_hair_spray_sealer"]:FindFirstChild("Interact", true)
+
+
+    if targetPart and targetPart:IsA("BasePart") then
+        
+        -- Set the CFrame to the target part's position, plus a small vertical offset (2.5 studs)
+        local targetCFrame = targetPart.CFrame + Vector3.new(0, 2.5, 0)
+        local totalTime = 0
+        local ENFORCEMENT_DURATION = 2.0 -- How long to aggressively set the position (2 seconds)
+        
+        -- AGGRESSIVE CFrame ENFORCEMENT: Use Heartbeat to constantly override the CFrame.
+        -- Declare connection outside the Heartbeat function so it can be reliably disconnected.
+        local connection = nil 
+        
+        connection = RunService.Heartbeat:Connect(function(dt)
+            totalTime = totalTime + dt
+            
+            -- Continually set the CFrame to ensure the module cannot override it
+            humanoidRootPart.CFrame = targetCFrame
+            humanoidRootPart.Anchored = false 
+            
+            -- Stop hammering the CFrame after the duration is met
+            if totalTime > ENFORCEMENT_DURATION then
+                if connection then -- Check if connection is valid before disconnecting
+                    connection:Disconnect()
+                end
+                print("Aggressive CFrame enforcement finished. Character should be stable at the Salon.")
+            end
+        end)
+        
+        -- Also set the CFrame once immediately after connecting the event
+        humanoidRootPart.CFrame = targetCFrame
+
+        print("Character teleported directly onto the Salon Interact part (Aggressive Enforcement Active).")
+    else
+        warn("Target part (Salon Interact) not found inside the loaded Salon model. Check the path and part name.")
+    end
+end
+
+
+-- Wait for the interior to stream. This duration might need adjustment based on your game's loading speed.
 local waitBeforeTeleport = 10
-print(string.format("\nWaiting %d seconds for house interior to stream before teleport...", waitBeforeTeleport))
+print(string.format("\nWaiting %d seconds for interior to stream before teleport...", waitBeforeTeleport))
 task.wait(waitBeforeTeleport)
 
-print("\n--- Initiating Direct Teleport to Housing (Replicating MagicHouseDoorInteractions Call) ---")
+print("\n--- Initiating Direct Teleport to Salon ---") -- CHANGED: Print statement
 print("Attempting to trigger automatic door teleport to destination:", destinationId)
 print("Using door ID:", doorIdForTeleport)
-print("Using minimal settings table with house_owner:", tostring(teleportSettings.house_owner))
+print("Position adjustment will be handled by a separate background task.")
 
 -- Add a final small wait right before the InteriorsM.enter_smooth call
-task.wait(1) -- Added a 1-second wait here for final stability
+task.wait(1) 
 
 -- Call the enter_smooth function for the teleport
 InteriorsM.enter_smooth(destinationId, doorIdForTeleport, teleportSettings, nil)
 
-print("\nAdopt Me automatic direct house teleport script initiated.")
+-- --- FIX: Initiate a separate task to handle post-teleport position adjustment reliably. ---
+-- This task uses WaitForChild to guarantee the Salon model is loaded before trying to position.
+task.spawn(handlePostTeleportMovement)
+
+print("\nautomatic direct Salon teleport script initiated.") -- CHANGED: Print statement
